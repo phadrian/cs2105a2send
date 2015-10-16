@@ -20,11 +20,17 @@ public class FileSender {
 			System.exit(-1);
 		}
 
+		// Declare the size of the packet buffer
+		int bufferSize = 1000;
+				
 		// Create address to connect to
 		InetSocketAddress addr = new InetSocketAddress(args[0], Integer.parseInt(args[1]));
 		
 		// Create the socket to send packets
 		DatagramSocket socket = new DatagramSocket();
+		
+		// Add a timeout to accommodate packet loss
+		socket.setSoTimeout(100);
 		
 		// Create the CRC32 object
 		CRC32 crc = new CRC32();
@@ -38,7 +44,7 @@ public class FileSender {
 		byte[] destBytes = args[3].getBytes();
 		
 		// Create the packet
-		byte[] data = new byte[1000];
+		byte[] data = new byte[bufferSize];
 		ByteBuffer b = ByteBuffer.wrap(data);
 		DatagramPacket pathPacket;
 		
@@ -62,7 +68,7 @@ public class FileSender {
 		b.rewind();
 		b.putLong(checksum);
 		
-		// Initialize the packet, destPath.length + 8 is likely < data.length(1000)
+		// Initialize the packet, destPath.length + 8 is likely < data.length(bufferSize)
 		pathPacket = new DatagramPacket(data, data.length, addr);
 		socket.send(pathPacket);
 		
@@ -78,19 +84,27 @@ public class FileSender {
 		boolean isCorrupted = true;
 		while (isCorrupted) {
 			// After sending check for the ACK/NAK response from FileReceiver
-			byte[] response = new byte[1000];
+			byte[] response = new byte[bufferSize];
 			DatagramPacket responsePacket = new DatagramPacket(response, response.length);
-			socket.receive(responsePacket);
 			
-			String responseMessage = new String(response).trim();
-			
-			// If ACK received, no resend required
-			if (responseMessage.equals("notCorrupted")) {
-				System.out.println("Packet sent correctly.");
-				isCorrupted = false;
-			} else {
-				// NAK received, resend the filepath packet
-				System.out.println("Packet corrupted, resending packet.");
+			try {
+				socket.receive(responsePacket);
+				
+				String responseMessage = new String(response).trim();
+				
+				// If ACK received, no resend required
+				if (responseMessage.equals("notCorrupted")) {
+					System.out.println("Packet sent correctly.");
+					isCorrupted = false;
+				} else {
+					// NAK received, resend the filepath packet
+					System.out.println("Packet corrupted, resending packet.");
+					socket.send(pathPacket);
+				}
+			} catch (SocketTimeoutException e) {
+				
+				// Timeout, send the packet again
+				System.out.println("No response received, resending packet.");
 				socket.send(pathPacket);
 			}
 		}
@@ -109,7 +123,7 @@ public class FileSender {
 		int num = (int)Math.ceil(fileInBytes.length / (double)numOfDataBytes);
 		
 		// Reuse the data buffer created earlier
-		data = new byte[1000];
+		data = new byte[bufferSize];
 		b = ByteBuffer.wrap(data);
 		DatagramPacket dataPacket;
 
@@ -126,7 +140,7 @@ public class FileSender {
 			// Used to check if end of file byte[] is reached
 			int leftOverBytes;
 			
-			// Reached the end of the file with leftover bytes < 1000
+			// Reached the end of the file with leftover bytes < bufferSize
 			if ((leftOverBytes = fileInBytes.length - i * numOfDataBytes) < numOfDataBytes) {
 				
 				// Set the number of data bytes
@@ -167,19 +181,27 @@ public class FileSender {
 			isCorrupted = true;
 			while (isCorrupted) {
 				// After sending check for the ACK/NAK response from FileReceiver
-				byte[] response = new byte[1000];
+				byte[] response = new byte[bufferSize];
 				DatagramPacket responsePacket = new DatagramPacket(response, response.length);
-				socket.receive(responsePacket);
 				
-				String responseMessage = new String(response).trim();
-				
-				// If ACK received, no resend required
-				if (responseMessage.equals("notCorrupted")) {
-					System.out.println("Packet sent correctly.");
-					isCorrupted = false;
-				} else {
-					// garbled ACK/NAK, just resend the data packet
-					System.out.println("Packet corrupted, resending packet.");
+				try {
+					socket.receive(responsePacket);
+					
+					String responseMessage = new String(response).trim();
+					
+					// If ACK received, no resend required
+					if (responseMessage.equals("notCorrupted")) {
+						System.out.println("Packet sent correctly.");
+						isCorrupted = false;
+					} else {
+						// garbled ACK/NAK, just resend the data packet
+						System.out.println("Packet corrupted, resending packet.");
+						socket.send(dataPacket);
+					}
+				} catch (SocketTimeoutException e) {
+					
+					// Timeout, send the packet again
+					System.out.println("No response received, resending packet.");
 					socket.send(dataPacket);
 				}
 			}
