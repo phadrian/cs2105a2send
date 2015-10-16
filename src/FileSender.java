@@ -77,14 +77,15 @@ public class FileSender {
 		
 		boolean isCorrupted = true;
 		while (isCorrupted) {
-			
 			// After sending check for the ACK/NAK response from FileReceiver
-			byte[] response = new byte[1];
+			byte[] response = new byte[1000];
 			DatagramPacket responsePacket = new DatagramPacket(response, response.length);
 			socket.receive(responsePacket);
 			
+			String responseMessage = new String(response).trim();
+			
 			// If ACK received, no resend required
-			if (response[0] == 1) {
+			if (responseMessage.equals("notCorrupted")) {
 				System.out.println("Packet sent correctly.");
 				isCorrupted = false;
 			} else {
@@ -156,26 +157,31 @@ public class FileSender {
 			socket.send(dataPacket);
 			
 			// Debug message
-			//System.out.println("Sent CRC:" + checksum + " Contents:" + bytesToHex(data));
-		}
-	}
-	
-	private static void resendIfCorrupt(DatagramSocket sk, DatagramPacket pkt) throws IOException {
-		
-		boolean isCorrupt = true;
-		while (isCorrupt) {
-			// After sending check for the ack/nak response to see if transmission 
-			// was successful
-			byte[] response = new byte[1];
-			DatagramPacket responsePacket = new DatagramPacket(response, response.length);
-			sk.receive(responsePacket);
-
-			// ack received, continue sending
-			if (response[0] == 1) {
-				isCorrupt = false;
-			} else {
-				// nak received, resend and check again
-				sk.send(pkt);
+			System.out.println("Sent CRC:" + checksum + " Contents:" + bytesToHex(data));
+			
+			/*
+			 * Check if the data packet was sent correctly
+			 * =============================================
+			 */
+			
+			isCorrupted = true;
+			while (isCorrupted) {
+				// After sending check for the ACK/NAK response from FileReceiver
+				byte[] response = new byte[1000];
+				DatagramPacket responsePacket = new DatagramPacket(response, response.length);
+				socket.receive(responsePacket);
+				
+				String responseMessage = new String(response).trim();
+				
+				// If ACK received, no resend required
+				if (responseMessage.equals("notCorrupted")) {
+					System.out.println("Packet sent correctly.");
+					isCorrupted = false;
+				} else {
+					// garbled ACK/NAK, just resend the data packet
+					System.out.println("Packet corrupted, resending packet.");
+					socket.send(dataPacket);
+				}
 			}
 		}
 	}
